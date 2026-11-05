@@ -1,0 +1,26 @@
+meta:
+  app_id: cms_preview_link
+  display_name: Share preview
+  version: 0.0.1-dev.0
+  vendor: optimizely
+  summary: Share a link to the exact page version and variation open in the editor - no CMS login, no expiry.
+  support_url: https://www.optimizely.com
+  contact_email: joshua.onwezen@optimizely.com
+  categories:
+    - Testing & Utilities
+  availability:
+    - all
+
+runtime: node22-cms-ext
+
+functions:
+  cms_extension:
+    entry_point: CmsUiExtension
+    description: Signs share-preview links for the open version (CMS REST + the site's preview secret).
+    accepts: cms_ui_extension
+
+ui_extensions:
+  sidebar:
+    - name: share-preview
+      entry_point: SharePreview
+      display_name: Share preview
