@@ -224,7 +224,7 @@ describe('listVersionsOrExplain', () => {
     ({listVersions: () => Promise.reject(notFound), getItem: () => Promise.resolve(item)}) as unknown as CmsClient;
 
   it('says images cannot be shared', async () => {
-    // GET /v1/content/{key} for an image on joshCMS: no language versions.
+    // GET /v1/content/{key} for an image on a SaaS CMS instance: no language versions.
     const image = {key: '64c52fe72b1d48b98ced7122189e986b', contentType: 'ImageMedia', locales: ['']};
     await expect(listVersionsOrExplain(cmsWith(image), image.key, 'en')).rejects.toMatchObject({
       code: 'unsupported_content',

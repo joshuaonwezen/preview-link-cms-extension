@@ -6,8 +6,8 @@ export interface ShareTarget {
   ver: string;
 }
 
-// Must stay identical to the signing in optimizely-nextjs-demo src/lib/preview/shareLink.ts:
-// HMAC-SHA256 over "key\nver\nloc" with the site's OPTIMIZELY_PREVIEW_SECRET, base64url.
+// Must stay identical to the signing the site's share route verifies (README: What your site
+// needs): HMAC-SHA256 over "key\nver\nloc" with the site's preview secret, base64url.
 // The site's /preview/share checks it and renders that version through Graph's App
 // Key/Secret, not the CMS's ~5-minute preview token, so the link never expires.
 // Rotating the secret on the site revokes every link at once.

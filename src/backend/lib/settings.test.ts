@@ -10,12 +10,12 @@ function reason(raw: string): string | null {
 
 describe('checkSiteUrl', () => {
   it('normalizes a public https address', () => {
-    expect(normalizeSiteUrl(' https://optimizely-onboarding.vercel.app/ ')).toBe('https://optimizely-onboarding.vercel.app');
+    expect(normalizeSiteUrl(' https://www.example.com/ ')).toBe('https://www.example.com');
     expect(normalizeSiteUrl('https://www.example.com:8443/en/?x=1#top')).toBe('https://www.example.com:8443/en');
   });
 
   it('wants a full URL', () => {
-    expect(normalizeSiteUrl('optimizely-onboarding.vercel.app')).toBeNull();
+    expect(normalizeSiteUrl('www.example.com')).toBeNull();
     expect(normalizeSiteUrl('')).toBeNull();
     expect(normalizeSiteUrl(undefined)).toBeNull();
     expect(reason('ftp://files.example.com')).toMatch(/full URL/);
