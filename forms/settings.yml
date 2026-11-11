@@ -6,14 +6,15 @@ sections:
         key: siteUrl
         label: Site URL
         help: >-
-          The front end that renders /preview/share for this CMS instance, e.g.
-          https://optimizely-onboarding.vercel.app for joshCMS.
+          The public https address of the website that shows these previews, for example
+          https://www.example.com. Local addresses and IP addresses aren't accepted.
       - type: secret
         key: previewSecret
         label: Preview secret
         help: >-
-          The site's OPTIMIZELY_PREVIEW_SECRET. Links are signed with it, and rotating it on the
-          site revokes every link. Leave blank to keep the saved one.
+          The preview secret the website was set up with (its OPTIMIZELY_PREVIEW_SECRET). Every
+          link is signed with it, and changing it on the website turns off all links shared so
+          far. Leave blank to keep the saved one.
       - type: button
         label: Save
         action: saveSite
@@ -25,8 +26,8 @@ sections:
         key: clientId
         label: Client ID
         help: >-
-          CMS → Settings → API Keys. Used to read the open item's versions and which
-          variation each one belongs to.
+          From CMS → Settings → API Keys. The app uses it to read the open page's versions and
+          which variation each one belongs to.
       - type: secret
         key: clientSecret
         label: Client secret

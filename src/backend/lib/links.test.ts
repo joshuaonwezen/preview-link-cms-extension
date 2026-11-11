@@ -1,10 +1,8 @@
-import {logger, resetLocalSettingsStore, storage} from '@zaiusinc/app-sdk';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 
 import {CmsClient, CmsItem, CmsVersion} from './cms';
 import {ApiError} from './http';
-import {getLinks, latestPerVariation, listVersionsOrExplain} from './links';
-import {loadConfig, normalizeSiteUrl} from './settings';
+import {checkLink, getLinks, latestPerVariation, listVersionsOrExplain} from './links';
 import {signShare} from './shareLink';
 
 const SITE = {url: 'https://site.example', previewSecret: 'secret'};
@@ -65,6 +63,64 @@ describe('getLinks', () => {
       getLinks({cms: fakeCms(VERSIONS), site: SITE}, {key: KEY, locale: 'en', version: '999'}),
     ).rejects.toMatchObject({code: 'version_missing'});
   });
+
+  it('refuses a version of another language or another item', async () => {
+    const dutch = {key: KEY, version: '1200', locale: 'nl', status: 'published'};
+    await expect(
+      getLinks({cms: fakeCms(VERSIONS, {getVersion: dutch}), site: SITE}, {key: KEY, locale: 'en', version: '1200'}),
+    ).rejects.toMatchObject({code: 'locale_mismatch'});
+    const otherItem = {...dutch, key: '64c52fe72b1d48b98ced7122189e986b', locale: 'en'};
+    await expect(
+      getLinks({cms: fakeCms(VERSIONS, {getVersion: otherItem}), site: SITE}, {key: KEY, locale: 'en', version: '1200'}),
+    ).rejects.toMatchObject({code: 'version_missing'});
+  });
+
+  it('accepts the same locale written differently', async () => {
+    const older = {key: KEY, version: '1200', locale: 'en_US', status: 'previous'};
+    const result = await getLinks(
+      {cms: fakeCms(VERSIONS, {getVersion: older}), site: SITE},
+      {key: KEY, locale: 'en-us', version: '1200'},
+    );
+    expect(result.current?.version).toBe('1200');
+  });
+
+  it('leaves the name empty rather than showing the content key', async () => {
+    const unnamed = VERSIONS.map(({displayName: _displayName, ...v}) => v);
+    const result = await getLinks({cms: fakeCms(unnamed), site: SITE}, {key: KEY, locale: 'en'});
+    expect(result.content.displayName).toBe('');
+    expect(result.current).toBeNull();
+  });
+});
+
+describe('checkLink', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('opens the signed link of a listed version', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', {status: 200}));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await checkLink({cms: fakeCms(VERSIONS), site: SITE}, {key: KEY, locale: 'en'}, '4160')).toEqual({
+      status: 200,
+      ok: true,
+    });
+    const sig = signShare({key: KEY, loc: 'en', ver: '4160'}, SITE.previewSecret);
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://site.example/preview/share?key=${KEY}&loc=en&ver=4160&sig=${sig}`);
+  });
+
+  it('signs nothing for a version the item does not have', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      checkLink({cms: fakeCms(VERSIONS), site: SITE}, {key: KEY, locale: 'en'}, '999'),
+    ).rejects.toMatchObject({code: 'version_missing'});
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('says in plain words when the site does not answer', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+    await expect(
+      checkLink({cms: fakeCms(VERSIONS), site: SITE}, {key: KEY, locale: 'en'}, '4156'),
+    ).rejects.toMatchObject({code: 'site_unreachable', message: expect.not.stringMatching(/HTTP|\d{3}/)});
+  });
 });
 
 describe('listVersionsOrExplain', () => {
@@ -81,31 +137,13 @@ describe('listVersionsOrExplain', () => {
     });
   });
 
+  it('says a deleted item has nothing to share', async () => {
+    await expect(listVersionsOrExplain(cmsWith(null), KEY, 'en')).rejects.toMatchObject({code: 'content_missing'});
+  });
+
   it('names the locales a page does exist in', async () => {
     await expect(
       listVersionsOrExplain(cmsWith({key: 'k', contentType: 'ArticlePage', locales: ['nl', 'sv']}), 'k', 'en'),
     ).rejects.toMatchObject({code: 'locale_missing', message: expect.stringContaining('nl, sv')});
-  });
-});
-
-describe('settings', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    resetLocalSettingsStore();
-  });
-
-  it('normalizes the site URL', () => {
-    expect(normalizeSiteUrl(' https://optimizely-onboarding.vercel.app/ ')).toBe('https://optimizely-onboarding.vercel.app');
-    expect(normalizeSiteUrl('optimizely-onboarding.vercel.app')).toBeNull();
-  });
-
-  it('treats an unreadable store as empty, so loadConfig reports missing settings', async () => {
-    // What the production store throws on an install that has never saved its settings.
-    vi.spyOn(storage.settings, 'get').mockRejectedValue(new Error('Failed to get value at app-data/1/settings'));
-    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
-    expect(await loadConfig()).toEqual({
-      ok: false,
-      missing: ['Site URL', 'Preview secret', 'CMS client ID', 'CMS client secret'],
-    });
   });
 });

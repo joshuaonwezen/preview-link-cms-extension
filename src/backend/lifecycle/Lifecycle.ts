@@ -12,7 +12,7 @@ import {
 
 import {CmsClient} from '../lib/cms';
 import {ApiError} from '../lib/http';
-import {CmsSettings, normalizeSiteUrl, readSection, SiteSettings} from '../lib/settings';
+import {checkSiteUrl, CmsSettings, readSection, SiteSettings} from '../lib/settings';
 
 const SITE_CHECK_TIMEOUT_MS = 15_000;
 
@@ -67,30 +67,37 @@ export class Lifecycle extends AppLifecycle {
   // its first link on the site and says so when the site rejects it.
   private async saveSite(formData: SubmittedFormData, result: LifecycleSettingsResult) {
     const previous = await readSection<SiteSettings>('site');
-    const siteUrl = normalizeSiteUrl(text(formData, 'siteUrl'));
+    const site = checkSiteUrl(text(formData, 'siteUrl'));
     // A secret field comes back blank when the editor didn't retype it - keep the stored one.
-    const previewSecret = text(formData, 'previewSecret') || previous.previewSecret || '';
-    if (!siteUrl) return result.addError('siteUrl', 'A full URL, e.g. https://optimizely-onboarding.vercel.app.');
+    const newSecret = text(formData, 'previewSecret');
+    const previewSecret = newSecret || previous.previewSecret || '';
+    if (!site.ok) return result.addError('siteUrl', site.reason);
     if (!previewSecret) return result.addError('previewSecret', 'Required.');
 
+    // Only whether the address answers. A redirect isn't followed, so the check never
+    // reaches a host other than the one saved.
     try {
-      const res = await fetch(siteUrl, {redirect: 'follow', signal: AbortSignal.timeout(SITE_CHECK_TIMEOUT_MS)});
+      const res = await fetch(site.url, {redirect: 'manual', signal: AbortSignal.timeout(SITE_CHECK_TIMEOUT_MS)});
       if (res.status >= 500) {
-        return result.addError('siteUrl', `The site answered HTTP ${res.status}.`).addToast('danger', 'Could not reach the site.');
+        return result
+          .addError('siteUrl', `The site answered with a server error (HTTP ${res.status}).`)
+          .addToast('danger', 'Could not reach the site.');
       }
     } catch {
       return result.addError('siteUrl', 'No answer from this URL.').addToast('danger', 'Could not reach the site.');
     }
 
-    await storage.settings.put('site', {siteUrl, previewSecret});
+    await storage.settings.put('site', {siteUrl: site.url, previewSecret});
+    logger.info('audit', 'saveSite', {siteUrl: site.url, newPreviewSecret: Boolean(newSecret)});
     return result.addToast('success', 'Site settings saved.');
   }
 
   private async saveCms(formData: SubmittedFormData, result: LifecycleSettingsResult) {
     const previous = await readSection<CmsSettings>('cms');
+    const newSecret = text(formData, 'clientSecret');
     const next: CmsSettings = {
       clientId: text(formData, 'clientId'),
-      clientSecret: text(formData, 'clientSecret') || previous.clientSecret || '',
+      clientSecret: newSecret || previous.clientSecret || '',
     };
     if (!next.clientId) return result.addError('clientId', 'Required.');
     if (!next.clientSecret) return result.addError('clientSecret', 'Required.');
@@ -107,6 +114,7 @@ export class Lifecycle extends AppLifecycle {
     }
 
     await storage.settings.put('cms', {...next});
+    logger.info('audit', 'saveCms', {clientId: next.clientId, newClientSecret: Boolean(newSecret)});
     return result.addToast('success', 'CMS API client saved.');
   }
 

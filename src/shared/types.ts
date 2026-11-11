@@ -9,7 +9,6 @@ export interface ContentRef {
   key: string;
   locale: string;
   version?: string;
-  publicUrl?: string;
 }
 
 export interface ShareLink {
@@ -22,6 +21,7 @@ export interface ShareLink {
 }
 
 export interface LinksResult {
+  /** `displayName` is '' when no version carries one. */
   content: {key: string; locale: string; displayName: string};
   /** The version open in the editor; null when the editor doesn't say which one. */
   current: ShareLink | null;

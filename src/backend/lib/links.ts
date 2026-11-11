@@ -1,20 +1,10 @@
 import {normalizeKey} from '../../shared/constants';
 import type {ContentRef, LinkCheck, LinksResult, ShareLink} from '../../shared/types';
 import {CmsClient, CmsVersion} from './cms';
+import {ActionError} from './errors';
 import {ApiError} from './http';
 import type {SiteConfig} from './settings';
 import {shareUrl} from './shareLink';
-
-/** A request the UI can fix (bad input, wrong state) - answered as HTTP 400. */
-export class ActionError extends Error {
-  public readonly code: string;
-
-  public constructor(code: string, message: string) {
-    super(message);
-    this.name = 'ActionError';
-    this.code = code;
-  }
-}
 
 export interface Deps {
   cms: CmsClient;
@@ -24,6 +14,10 @@ export interface Deps {
 // The share page renders the whole page server-side; give it time, but stay well
 // inside the function's own budget.
 const CHECK_TIMEOUT_MS = 20_000;
+
+const SITE_TIMED_OUT = 'The site took too long to open this preview. Check again in a moment.';
+const SITE_UNREACHABLE =
+  "The site couldn't be reached. If this keeps happening, ask a CMS admin to check the site URL in the app settings.";
 
 /**
  * The item's versions in `locale`. The editor reports its UI locale even for items
@@ -36,16 +30,21 @@ export async function listVersionsOrExplain(cms: CmsClient, key: string, locale:
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
     const item = await cms.getItem(key);
-    if (!item) throw new ActionError('content_missing', 'This item no longer exists in the CMS.');
+    if (!item) {
+      throw new ActionError('content_missing', "This item isn't in the CMS any more, so there is nothing to share.");
+    }
     const locales = (item.locales ?? []).filter(Boolean);
     if (locales.length === 0) {
       const what = item.contentType ? ` (${item.contentType})` : '';
       throw new ActionError(
         'unsupported_content',
-        `Preview links are for pages. This item${what} has no language versions, so the site can't render it.`,
+        `Preview links are for pages and experiences. This item${what} isn't one, so the site can't show it.`,
       );
     }
-    throw new ActionError('locale_missing', `This item has no "${locale}" version. It exists in: ${locales.join(', ')}.`);
+    throw new ActionError(
+      'locale_missing',
+      `This page has no "${locale}" language version. It exists in: ${locales.join(', ')}.`,
+    );
   }
 }
 
@@ -83,24 +82,44 @@ function toLink({site}: Deps, {key, locale}: Target, v: CmsVersion): ShareLink {
   };
 }
 
+// The editor and the CMS don't always agree on case or separator (en-US, en_us).
+function sameLocale(a: string, b: string): boolean {
+  return a.replace(/_/g, '-').toLowerCase() === b.replace(/_/g, '-').toLowerCase();
+}
+
+/**
+ * `version` of the target: from the locale's listing or, for one older than the listing
+ * reaches, from the version endpoint. Only a version of this item in this locale is signed;
+ * a link for another item's or language's version would open nothing.
+ */
+async function findVersion(cms: CmsClient, target: Target, version: string, listed: CmsVersion[]): Promise<CmsVersion> {
+  const found = listed.find((v) => String(v.version) === version) ?? (await cms.getVersion(target.key, version));
+  if (!found || (found.key && normalizeKey(found.key) !== target.key)) {
+    throw new ActionError(
+      'version_missing',
+      "The version open in the editor isn't in the CMS any more. Reload the page in the editor and try again.",
+    );
+  }
+  if (found.locale && !sameLocale(found.locale, target.locale)) {
+    throw new ActionError(
+      'locale_mismatch',
+      `The open version is the "${found.locale}" language version, not "${target.locale}". ` +
+        'Reload the page in the editor and try again.',
+    );
+  }
+  return found;
+}
+
 export async function getLinks(deps: Deps, ref: ContentRef): Promise<LinksResult> {
   const target = await resolveTarget(deps, ref);
   const versions = await listVersionsOrExplain(deps.cms, target.key, target.locale);
-
-  let current: ShareLink | null = null;
-  if (ref.version) {
-    const open =
-      versions.find((v) => String(v.version) === String(ref.version)) ??
-      (await deps.cms.getVersion(target.key, ref.version));
-    if (!open) throw new ActionError('version_missing', `Version ${ref.version} isn't in the CMS any more.`);
-    current = toLink(deps, target, open);
-  }
+  const open = ref.version ? await findVersion(deps.cms, target, ref.version, versions) : null;
 
   const latest = latestPerVariation(versions);
   const original = latest.find((v) => !v.variation);
   return {
-    content: {key: target.key, locale: target.locale, displayName: original?.displayName || target.key},
-    current,
+    content: {key: target.key, locale: target.locale, displayName: original?.displayName || open?.displayName || ''},
+    current: open ? toLink(deps, target, open) : null,
     latest: latest.map((v) => toLink(deps, target, v)),
   };
 }
@@ -112,12 +131,14 @@ export async function getLinks(deps: Deps, ref: ContentRef): Promise<LinksResult
 export async function checkLink(deps: Deps, ref: ContentRef, version: string): Promise<LinkCheck> {
   if (!version) throw new ActionError('missing_version', 'No version to check.');
   const target = await resolveTarget(deps, ref);
+  // Sign only what getLinks would have signed: a version listed for this item and locale.
+  await findVersion(deps.cms, target, version, await listVersionsOrExplain(deps.cms, target.key, target.locale));
   const url = shareUrl(deps.site.url, {key: target.key, loc: target.locale, ver: version}, deps.site.previewSecret);
   try {
     const res = await fetch(url, {redirect: 'follow', signal: AbortSignal.timeout(CHECK_TIMEOUT_MS)});
     return {status: res.status, ok: res.status === 200};
   } catch (error) {
-    const reason = error instanceof Error && error.name === 'TimeoutError' ? 'timed out' : 'failed';
-    throw new ActionError('site_unreachable', `Opening the link on ${deps.site.url} ${reason}.`);
+    const timedOut = error instanceof Error && error.name === 'TimeoutError';
+    throw new ActionError('site_unreachable', timedOut ? SITE_TIMED_OUT : SITE_UNREACHABLE);
   }
 }

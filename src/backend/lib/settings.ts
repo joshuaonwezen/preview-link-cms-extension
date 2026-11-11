@@ -1,3 +1,5 @@
+import {isIP} from 'node:net';
+
 import {logger, storage, ValueHash} from '@zaiusinc/app-sdk';
 
 import type {CmsConfig} from './cms';
@@ -22,16 +24,39 @@ export interface SiteConfig {
 
 export type LoadedConfig = {ok: true; site: SiteConfig; cms: CmsConfig} | {ok: false; missing: string[]};
 
+export type SiteUrlCheck = {ok: true; url: string} | {ok: false; reason: string};
+
+// Names that only resolve inside a network. The function opens links on this site from
+// Optimizely's servers, so the address must be a public one.
+const PRIVATE_SUFFIXES = ['.localhost', '.local', '.internal'];
+
+/** https://host[/path] without a trailing slash, or why the value can't be the site's address. */
+export function checkSiteUrl(raw: string | undefined): SiteUrlCheck {
+  const value = raw?.trim() ?? '';
+  let url: URL | null = null;
+  try {
+    url = /^https?:\/\/[^\s/]+/i.test(value) ? new URL(value) : null;
+  } catch {
+    url = null;
+  }
+  if (!url) return {ok: false, reason: 'A full URL, e.g. https://www.example.com.'};
+  if (url.protocol !== 'https:') return {ok: false, reason: 'Use an https:// address.'};
+  if (url.username || url.password) return {ok: false, reason: 'Leave the user name and password out of the URL.'};
+
+  // The URL parser has already turned 2130706433 or 0x7f.1 into 127.0.0.1.
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  if (isIP(host.replace(/^\[|\]$/g, ''))) return {ok: false, reason: "Use the site's host name, not an IP address."};
+  // Includes localhost and any other name without a dot.
+  if (!host.includes('.') || PRIVATE_SUFFIXES.some((suffix) => host.endsWith(suffix))) {
+    return {ok: false, reason: "Use the site's public address. Local and internal host names can't be reached."};
+  }
+  return {ok: true, url: `${url.origin}${url.pathname.replace(/\/+$/, '')}`};
+}
+
 /** https://host[/path] without a trailing slash, or null. */
 export function normalizeSiteUrl(raw: string | undefined): string | null {
-  const value = raw?.trim() ?? '';
-  if (!/^https?:\/\/[^\s/]+/i.test(value)) return null;
-  try {
-    const url = new URL(value);
-    return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
-  } catch {
-    return null;
-  }
+  const checked = checkSiteUrl(raw);
+  return checked.ok ? checked.url : null;
 }
 
 /**
