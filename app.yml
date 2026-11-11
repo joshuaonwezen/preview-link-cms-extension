@@ -1,7 +1,7 @@
 meta:
   app_id: cms_preview_link
   display_name: Share preview
-  version: 0.0.1-dev.2
+  version: 0.0.1-dev.3
   vendor: optimizely
   summary: Share a link to the exact page version and variation open in the editor - no CMS login, no expiry.
   support_url: https://www.optimizely.com
