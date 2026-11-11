@@ -57,7 +57,7 @@ export class CmsUiExtension extends App.Function {
 
       const config = await loadConfig();
       if (!config.ok) {
-        return new App.Response(412, fail('not_configured', `Missing in app settings: ${config.missing.join(', ')}.`));
+        return new App.Response(412, fail('not_configured', `Missing or not valid in app settings: ${config.missing.join(', ')}.`));
       }
       const deps: Deps = {cms: new CmsClient(config.cms), site: config.site};
       const handler = HANDLERS[action] as (deps: Deps, params: unknown) => Promise<unknown>;

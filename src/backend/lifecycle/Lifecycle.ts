@@ -67,29 +67,37 @@ export class Lifecycle extends AppLifecycle {
   // its first link on the site and says so when the site rejects it.
   private async saveSite(formData: SubmittedFormData, result: LifecycleSettingsResult) {
     const previous = await readSection<SiteSettings>('site');
-    const site = checkSiteUrl(text(formData, 'siteUrl'));
+    // Optional: left blank, each page's site comes from CMS Settings > Applications.
+    const rawUrl = text(formData, 'siteUrl');
+    const site = rawUrl ? checkSiteUrl(rawUrl) : null;
     // A secret field comes back blank when the editor didn't retype it - keep the stored one.
     const newSecret = text(formData, 'previewSecret');
     const previewSecret = newSecret || previous.previewSecret || '';
-    if (!site.ok) return result.addError('siteUrl', site.reason);
+    if (site && !site.ok) return result.addError('siteUrl', site.reason);
     if (!previewSecret) return result.addError('previewSecret', 'Required.');
+    const siteUrl = site?.ok ? site.url : '';
 
     // Only whether the address answers. A redirect isn't followed, so the check never
     // reaches a host other than the one saved.
-    try {
-      const res = await fetch(site.url, {redirect: 'manual', signal: AbortSignal.timeout(SITE_CHECK_TIMEOUT_MS)});
-      if (res.status >= 500) {
-        return result
-          .addError('siteUrl', `The site answered with a server error (HTTP ${res.status}).`)
-          .addToast('danger', 'Could not reach the site.');
+    if (siteUrl) {
+      try {
+        const res = await fetch(siteUrl, {redirect: 'manual', signal: AbortSignal.timeout(SITE_CHECK_TIMEOUT_MS)});
+        if (res.status >= 500) {
+          return result
+            .addError('siteUrl', `The site answered with a server error (HTTP ${res.status}).`)
+            .addToast('danger', 'Could not reach the site.');
+        }
+      } catch {
+        return result.addError('siteUrl', 'No answer from this URL.').addToast('danger', 'Could not reach the site.');
       }
-    } catch {
-      return result.addError('siteUrl', 'No answer from this URL.').addToast('danger', 'Could not reach the site.');
     }
 
-    await storage.settings.put('site', {siteUrl: site.url, previewSecret});
-    logger.info('audit', 'saveSite', {siteUrl: site.url, newPreviewSecret: Boolean(newSecret)});
-    return result.addToast('success', 'Site settings saved.');
+    await storage.settings.put('site', {siteUrl, previewSecret});
+    logger.info('audit', 'saveSite', {siteUrl: siteUrl || null, newPreviewSecret: Boolean(newSecret)});
+    return result.addToast(
+      'success',
+      siteUrl ? 'Site settings saved.' : "Site settings saved. Links go to each page's site from CMS Settings > Applications.",
+    );
   }
 
   private async saveCms(formData: SubmittedFormData, result: LifecycleSettingsResult) {

@@ -1,4 +1,5 @@
 import {ApiError, requestJson} from './http';
+import type {CmsApplication} from './siteUrl';
 
 const CMS_API = 'https://api.cms.optimizely.com';
 const PAGE_SIZE = 100;
@@ -30,6 +31,13 @@ export interface CmsItem {
   locales?: string[];
 }
 
+/** One page of a CMS list endpoint. */
+interface ListPage<T> {
+  items?: T[];
+  pageSize?: number;
+  totalItemCount?: number;
+}
+
 // Module scope survives warm invocations of the function.
 let tokenCache: {clientId: string; token: string; expiresAt: number} | null = null;
 
@@ -38,6 +46,11 @@ export class CmsClient {
 
   public constructor(cfg: CmsConfig) {
     this.cfg = cfg;
+  }
+
+  /** Not a secret: scopes caches to this install's API client. */
+  public get clientId(): string {
+    return this.cfg.clientId;
   }
 
   public async token(): Promise<string> {
@@ -99,5 +112,26 @@ export class CmsClient {
       if (error instanceof ApiError && error.status === 404) return null;
       throw error;
     }
+  }
+
+  /**
+   * The CMS's applications (Settings > Applications), each with its hosts. Answers have
+   * been `{items: [...]}`; a bare array is accepted too. Further pages are read only when
+   * the answer reports more items than it holds.
+   */
+  public async listApplications(): Promise<CmsApplication[]> {
+    const apps: CmsApplication[] = [];
+    let path = '/v1/applications';
+    for (let pageIndex = 0; pageIndex < MAX_PAGES; pageIndex++) {
+      const page = await this.get<ListPage<CmsApplication> | CmsApplication[]>('List applications', path);
+      if (Array.isArray(page)) return page;
+      const items = Array.isArray(page?.items) ? page.items : [];
+      apps.push(...items);
+      const total = page?.totalItemCount;
+      if (items.length === 0 || typeof total !== 'number' || apps.length >= total) break;
+      const size = typeof page?.pageSize === 'number' && page.pageSize > 0 ? Math.floor(page.pageSize) : items.length;
+      path = `/v1/applications?pageIndex=${pageIndex + 1}&pageSize=${size}`;
+    }
+    return apps;
   }
 }

@@ -6,15 +6,17 @@ sections:
         key: siteUrl
         label: Site URL
         help: >-
-          The public https address of the website that shows these previews, for example
-          https://www.example.com. Local addresses and IP addresses aren't accepted.
+          Optional. Leave blank to use the site address set for the page's application in CMS
+          Settings > Applications. Set it only to override that: the public https address of the
+          website that shows these previews, for example https://www.example.com. Local
+          addresses and IP addresses aren't accepted.
       - type: secret
         key: previewSecret
         label: Preview secret
         help: >-
-          The preview secret the website was set up with (its OPTIMIZELY_PREVIEW_SECRET). Every
-          link is signed with it, and changing it on the website turns off all links shared so
-          far. Leave blank to keep the saved one.
+          Required. The secret your website checks share links with: use a long random value and
+          set the same one on the website. Every link is signed with it, and changing it turns
+          off all links shared so far. Leave blank to keep the saved one.
       - type: button
         label: Save
         action: saveSite
@@ -26,8 +28,8 @@ sections:
         key: clientId
         label: Client ID
         help: >-
-          From CMS → Settings → API Keys. The app uses it to read the open page's versions and
-          which variation each one belongs to.
+          From CMS Settings > API Keys. The app uses it to read the open page's versions, which
+          variation each one belongs to, and the site addresses in Settings > Applications.
       - type: secret
         key: clientSecret
         label: Client secret

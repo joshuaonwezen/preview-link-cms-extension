@@ -17,7 +17,10 @@ export type CmsSettings = {
 };
 
 export interface SiteConfig {
-  /** Origin (plus optional path) without a trailing slash. */
+  /**
+   * The admin's override: origin (plus optional path) without a trailing slash. '' when
+   * left blank, and each page's site then comes from CMS Settings > Applications.
+   */
   url: string;
   previewSecret: string;
 }
@@ -78,16 +81,19 @@ export async function loadConfig(): Promise<LoadedConfig> {
     readSection<SiteSettings>('site'),
     readSection<CmsSettings>('cms'),
   ]);
-  const url = normalizeSiteUrl(siteSettings.siteUrl);
+  // The site URL is optional, but one that is saved and can't be used (saved before https
+  // was required) is reported rather than quietly replaced by the CMS's own hosts.
+  const savedUrl = siteSettings.siteUrl?.trim() ?? '';
+  const url = savedUrl ? normalizeSiteUrl(savedUrl) : '';
   const previewSecret = siteSettings.previewSecret?.trim() ?? '';
   const cms = {clientId: cmsSettings.clientId?.trim() ?? '', clientSecret: cmsSettings.clientSecret?.trim() ?? ''};
 
   const missing = [
-    !url && 'Site URL',
+    url === null && 'Site URL',
     !previewSecret && 'Preview secret',
     !cms.clientId && 'CMS client ID',
     !cms.clientSecret && 'CMS client secret',
   ].filter((m): m is string => Boolean(m));
 
-  return missing.length > 0 ? {ok: false, missing} : {ok: true, site: {url: url!, previewSecret}, cms};
+  return missing.length > 0 ? {ok: false, missing} : {ok: true, site: {url: url ?? '', previewSecret}, cms};
 }

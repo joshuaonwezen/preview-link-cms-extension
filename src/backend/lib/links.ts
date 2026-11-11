@@ -3,8 +3,9 @@ import type {ContentRef, LinkCheck, LinksResult, ShareLink} from '../../shared/t
 import {CmsClient, CmsVersion} from './cms';
 import {ActionError} from './errors';
 import {ApiError} from './http';
-import type {SiteConfig} from './settings';
+import {normalizeSiteUrl, type SiteConfig} from './settings';
 import {shareUrl} from './shareLink';
+import {pickSiteUrl, siteOrigins, type SiteOrigins} from './siteUrl';
 
 export interface Deps {
   cms: CmsClient;
@@ -17,7 +18,43 @@ const CHECK_TIMEOUT_MS = 20_000;
 
 const SITE_TIMED_OUT = 'The site took too long to open this preview. Check again in a moment.';
 const SITE_UNREACHABLE =
-  "The site couldn't be reached. If this keeps happening, ask a CMS admin to check the site URL in the app settings.";
+  "The site couldn't be reached. If this keeps happening, ask a CMS admin to check the site's address " +
+  '(the Site URL in the app settings, or the host in CMS Settings > Applications).';
+
+const SET_SITE_URL = 'Ask a CMS admin to set the Site URL in the app settings.';
+const SITE_UNKNOWN = {
+  several: `This CMS has more than one site and this page's address isn't one of them. ${SET_SITE_URL}`,
+  none: `CMS Settings > Applications has no https address for this page's site. ${SET_SITE_URL}`,
+  notPublic: `This page's site address in CMS Settings > Applications isn't a public one. ${SET_SITE_URL}`,
+  denied: `The app's CMS API client can't read the site addresses in CMS Settings > Applications. ${SET_SITE_URL}`,
+};
+
+/**
+ * Where this page's links go: the admin's Site URL when one is saved; otherwise the page's
+ * own site, from the CMS's application hosts (siteUrl.ts). Picked per request, since one
+ * CMS can serve several sites.
+ */
+export async function siteUrlFor({cms, site}: Deps, ref: ContentRef): Promise<string> {
+  if (site.url) return site.url;
+  let origins: SiteOrigins;
+  try {
+    origins = await siteOrigins(cms.clientId, () => cms.listApplications());
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) throw new ActionError('site_unknown', SITE_UNKNOWN.denied);
+    throw error;
+  }
+  const picked = pickSiteUrl('', ref.publicUrl, origins);
+  if (!picked) throw new ActionError('site_unknown', origins.primary.length > 1 ? SITE_UNKNOWN.several : SITE_UNKNOWN.none);
+  // The rules a typed-in Site URL must pass: checkLink opens this address from Optimizely's
+  // servers, so an application host that is an IP address or an internal name is refused.
+  const url = normalizeSiteUrl(picked);
+  if (!url) throw new ActionError('site_unknown', SITE_UNKNOWN.notPublic);
+  return url;
+}
+
+async function resolveSite(deps: Deps, ref: ContentRef): Promise<SiteConfig> {
+  return {url: await siteUrlFor(deps, ref), previewSecret: deps.site.previewSecret};
+}
 
 /**
  * The item's versions in `locale`. The editor reports its UI locale even for items
@@ -72,7 +109,7 @@ async function resolveTarget({cms}: Deps, ref: ContentRef): Promise<Target> {
   return {key, locale: ref.locale || (await cms.primaryLocale(key))};
 }
 
-function toLink({site}: Deps, {key, locale}: Target, v: CmsVersion): ShareLink {
+function toLink(site: SiteConfig, {key, locale}: Target, v: CmsVersion): ShareLink {
   const version = String(v.version);
   return {
     url: shareUrl(site.url, {key, loc: locale, ver: version}, site.previewSecret),
@@ -111,6 +148,7 @@ async function findVersion(cms: CmsClient, target: Target, version: string, list
 }
 
 export async function getLinks(deps: Deps, ref: ContentRef): Promise<LinksResult> {
+  const site = await resolveSite(deps, ref);
   const target = await resolveTarget(deps, ref);
   const versions = await listVersionsOrExplain(deps.cms, target.key, target.locale);
   const open = ref.version ? await findVersion(deps.cms, target, ref.version, versions) : null;
@@ -119,21 +157,22 @@ export async function getLinks(deps: Deps, ref: ContentRef): Promise<LinksResult
   const original = latest.find((v) => !v.variation);
   return {
     content: {key: target.key, locale: target.locale, displayName: original?.displayName || open?.displayName || ''},
-    current: open ? toLink(deps, target, open) : null,
-    latest: latest.map((v) => toLink(deps, target, v)),
+    current: open ? toLink(site, target, open) : null,
+    latest: latest.map((v) => toLink(site, target, v)),
   };
 }
 
 /**
  * Opens the version's link the way a recipient would. A 404 means the site rejected the
- * signature (wrong preview secret or site URL), or Graph doesn't have that version yet.
+ * signature (wrong preview secret or site address), or Graph doesn't have that version yet.
  */
 export async function checkLink(deps: Deps, ref: ContentRef, version: string): Promise<LinkCheck> {
   if (!version) throw new ActionError('missing_version', 'No version to check.');
+  const site = await resolveSite(deps, ref);
   const target = await resolveTarget(deps, ref);
   // Sign only what getLinks would have signed: a version listed for this item and locale.
   await findVersion(deps.cms, target, version, await listVersionsOrExplain(deps.cms, target.key, target.locale));
-  const url = shareUrl(deps.site.url, {key: target.key, loc: target.locale, ver: version}, deps.site.previewSecret);
+  const url = shareUrl(site.url, {key: target.key, loc: target.locale, ver: version}, site.previewSecret);
   try {
     const res = await fetch(url, {redirect: 'follow', signal: AbortSignal.timeout(CHECK_TIMEOUT_MS)});
     return {status: res.status, ok: res.status === 200};

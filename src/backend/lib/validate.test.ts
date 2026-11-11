@@ -8,7 +8,18 @@ describe('contentRef', () => {
   it('normalizes the key and keeps known fields only', () => {
     expect(
       contentRef({key: 'DCF0E497-951c-4517-ac1a-7d7ecff0b853', locale: 'en', version: '3198', publicUrl: 'https://x.example/', extra: 1}),
-    ).toEqual({key: KEY, locale: 'en', version: '3198'});
+    ).toEqual({key: KEY, locale: 'en', version: '3198', publicUrl: 'https://x.example/'});
+  });
+
+  it("accepts only an https page address, and doesn't need one", () => {
+    expect(contentRef({key: KEY, publicUrl: ''})).toEqual({key: KEY, locale: ''});
+    expect(contentRef({key: KEY, publicUrl: null})).toEqual({key: KEY, locale: ''});
+    expect(() => contentRef({key: KEY, publicUrl: 'http://www.example.com/'})).toThrow(/publicUrl: not an https/);
+    expect(() => contentRef({key: KEY, publicUrl: 'javascript:alert(1)'})).toThrow(/publicUrl: not an https/);
+    expect(() => contentRef({key: KEY, publicUrl: 'https://'})).toThrow(/publicUrl: not a URL/);
+    expect(() => contentRef({key: KEY, publicUrl: ['https://www.example.com']})).toThrow(/publicUrl: expected text/);
+    const long = `https://www.example.com/${'a'.repeat(2048)}`;
+    expect(() => contentRef({key: KEY, publicUrl: long})).toThrow(/publicUrl: at most 2048/);
   });
 
   it('allows a missing locale and version', () => {

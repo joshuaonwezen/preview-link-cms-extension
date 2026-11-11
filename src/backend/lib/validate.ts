@@ -1,4 +1,4 @@
-import {normalizeKey} from '../../shared/constants';
+import {normalizeKey, PUBLIC_URL_MAX_LENGTH} from '../../shared/constants';
 import type {ActionName, ActionParams, ContentRef} from '../../shared/types';
 import {ActionError} from './errors';
 
@@ -34,6 +34,18 @@ export function versionNumber(raw: unknown, field: string, {optional = false} = 
   return version;
 }
 
+/**
+ * The page's address, as the editor reports it. Only ever compared with the CMS's own
+ * application hosts (siteUrl.ts), never fetched.
+ */
+export function publicUrl(raw: unknown, field: string): string {
+  const url = str(raw, field, {optional: true, max: PUBLIC_URL_MAX_LENGTH});
+  if (!url) return '';
+  if (!/^https:\/\//i.test(url)) invalid(field, 'not an https:// address.');
+  if (!URL.canParse(url)) invalid(field, 'not a URL.');
+  return url;
+}
+
 export function contentRef(raw: unknown): ContentRef {
   const ref = record(raw, 'content');
   const key = normalizeKey(str(ref.key, 'content.key', {max: 64}));
@@ -41,7 +53,8 @@ export function contentRef(raw: unknown): ContentRef {
   const locale = str(ref.locale, 'content.locale', {optional: true, max: 35});
   if (locale && !LOCALE.test(locale)) invalid('content.locale', 'not a locale code.');
   const version = versionNumber(ref.version, 'content.version', {optional: true});
-  return {key, locale, ...(version ? {version} : {})};
+  const pageUrl = publicUrl(ref.publicUrl, 'content.publicUrl');
+  return {key, locale, ...(version ? {version} : {}), ...(pageUrl ? {publicUrl: pageUrl} : {})};
 }
 
 type Parsers = {[A in ActionName]: (raw: Record<string, unknown>) => ActionParams[A]};

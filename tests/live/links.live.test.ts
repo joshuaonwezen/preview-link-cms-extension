@@ -1,7 +1,8 @@
 // Read-only: lists a real page's versions, signs links and opens them on the real site.
-//   PREVIEW_LIVE=1 OPTIMIZELY_CMS_CLIENT_ID=… OPTIMIZELY_CMS_CLIENT_SECRET=… \
-//   PREVIEW_SITE_URL=https://optimizely-onboarding.vercel.app OPTIMIZELY_PREVIEW_SECRET=… \
-//   PREVIEW_LIVE_KEY=<content key> yarn vitest run tests/live
+//   PREVIEW_LIVE=1 OPTIMIZELY_CMS_CLIENT_ID=<client-id> OPTIMIZELY_CMS_CLIENT_SECRET=<client-secret> \
+//   PREVIEW_SITE_URL=https://www.example.com OPTIMIZELY_PREVIEW_SECRET=<preview-secret> \
+//   PREVIEW_LIVE_KEY=<content-key> yarn vitest run tests/live
+// Leave PREVIEW_SITE_URL empty to use the hosts in CMS Settings > Applications.
 import {describe, expect, it} from 'vitest';
 
 import {CmsClient} from '../../src/backend/lib/cms';

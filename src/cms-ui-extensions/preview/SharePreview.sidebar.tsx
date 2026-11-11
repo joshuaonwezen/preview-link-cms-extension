@@ -14,7 +14,7 @@ import {
   Text,
 } from '@optiaxiom/react';
 import {register, type ContentState, type ExtensionContext} from '@optimizely/cms-extensibility-sdk';
-import {normalizeKey} from '@shared/constants';
+import {normalizeKey, PUBLIC_URL_MAX_LENGTH} from '@shared/constants';
 import type {ContentRef, LinkCheck, LinksResult, ShareLink} from '@shared/types';
 import {statusBadge} from '@shared/versionStatus';
 import {useCallback, useEffect, useRef, useState, type ReactNode} from 'react';
@@ -23,22 +23,35 @@ import {call, CallError, errorMessage} from '../common/api';
 import {CopyButton} from '../common/CopyButton';
 import {OpenLink} from '../common/OpenLink';
 
+// The backend uses the page's address only to tell which of the CMS's sites the page is
+// on, and only https hosts count, so anything else isn't sent (the backend would refuse it).
+function pageUrl(url: string | undefined): string | undefined {
+  return url && /^https:\/\//i.test(url) && url.length <= PUBLIC_URL_MAX_LENGTH ? url : undefined;
+}
+
 function toRef(state: ContentState): ContentRef | null {
   if (!state?.key) return null;
-  return {key: state.key, locale: state.locale ?? '', version: state.version};
+  return {key: state.key, locale: state.locale ?? '', version: state.version, publicUrl: pageUrl(state.publicUrl)};
 }
 
 function sameRef(a: ContentRef | null, b: ContentRef | null): boolean {
-  return a?.key === b?.key && a?.locale === b?.locale && a?.version === b?.version;
+  return a?.key === b?.key && a?.locale === b?.locale && a?.version === b?.version && a?.publicUrl === b?.publicUrl;
 }
 
 function errorCode(error: Error): string | null {
   return error instanceof CallError ? error.code : null;
 }
 
-// Things to sort out rather than failures: missing settings, a language or version the
-// CMS doesn't have, an item that was deleted.
-const WARNINGS = new Set(['not_configured', 'locale_missing', 'locale_mismatch', 'content_missing', 'version_missing']);
+// Things to sort out rather than failures: missing settings, a site the app can't tell, a
+// language or version the CMS doesn't have, an item that was deleted.
+const WARNINGS = new Set([
+  'not_configured',
+  'site_unknown',
+  'locale_missing',
+  'locale_mismatch',
+  'content_missing',
+  'version_missing',
+]);
 // Retrying can't change these: the item is an image or folder, or it is gone.
 const NO_RETRY = new Set(['unsupported_content', 'content_missing']);
 
@@ -77,7 +90,7 @@ type CheckState =
 
 const NOT_OPENING =
   "The site couldn't open this preview. A draft you just saved can take a few seconds; check again. If it keeps " +
-  'failing, ask a CMS admin to check the site URL and preview secret in the app settings.';
+  "failing, ask a CMS admin to check the site's address and the preview secret in the app settings.";
 
 function CheckLine({check, onCheckAgain}: {check: CheckState; onCheckAgain: () => void}) {
   if (check.state === 'checking') {

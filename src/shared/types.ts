@@ -9,6 +9,11 @@ export interface ContentRef {
   key: string;
   locale: string;
   version?: string;
+  /**
+   * The page's address as the editor reports it (https only). Used only to tell which of
+   * the CMS's sites the page is on; the backend never opens it.
+   */
+  publicUrl?: string;
 }
 
 export interface ShareLink {

@@ -49,6 +49,32 @@ describe('saving the site settings', () => {
     expect(info).toHaveBeenCalledWith('audit', 'saveSite', {siteUrl: 'https://preview.example.com', newPreviewSecret: false});
   });
 
+  it('saves a blank site URL without contacting any site', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+
+    const response = await saveSite({siteUrl: '  ', previewSecret: 'secret'});
+
+    expect(response.errors).toEqual({});
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await storage.settings.get('site')).toEqual({siteUrl: '', previewSecret: 'secret'});
+    expect(info).toHaveBeenCalledWith('audit', 'saveSite', {siteUrl: null, newPreviewSecret: true});
+  });
+
+  it('clears a saved site URL and keeps the secret', async () => {
+    await storage.settings.put('site', {siteUrl: 'https://www.example.com', previewSecret: 'kept'});
+    vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    await saveSite({siteUrl: '', previewSecret: ''});
+    expect(await storage.settings.get('site')).toEqual({siteUrl: '', previewSecret: 'kept'});
+  });
+
+  it('still requires the preview secret when the site URL is blank', async () => {
+    const response = await saveSite({siteUrl: '', previewSecret: ''});
+    expect(response.errors?.['site.previewSecret']?.[0]).toBe('Required.');
+    expect(await storage.settings.get('site')).toEqual({});
+  });
+
   it('does not save a site that answers with a server error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', {status: 503})));
     const response = await saveSite({siteUrl: 'https://www.example.com', previewSecret: 'secret'});

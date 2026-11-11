@@ -69,7 +69,17 @@ describe('loadConfig', () => {
     vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     expect(await loadConfig()).toEqual({
       ok: false,
-      missing: ['Site URL', 'Preview secret', 'CMS client ID', 'CMS client secret'],
+      missing: ['Preview secret', 'CMS client ID', 'CMS client secret'],
+    });
+  });
+
+  it('does not need a site URL: links then go to the CMS application hosts', async () => {
+    await storage.settings.put('site', {siteUrl: '', previewSecret: 'secret'});
+    await storage.settings.put('cms', {clientId: 'id', clientSecret: 'secret'});
+    expect(await loadConfig()).toEqual({
+      ok: true,
+      site: {url: '', previewSecret: 'secret'},
+      cms: {clientId: 'id', clientSecret: 'secret'},
     });
   });
 

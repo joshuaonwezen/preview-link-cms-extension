@@ -16,6 +16,7 @@ export class CallError extends Error {
 // including CMS errors, whose detail stays in the app's log.
 const FALLBACK_MESSAGES: Record<string, string> = {
   not_configured: 'The app is missing settings.',
+  site_unknown: "The app can't tell which site this page is on. Ask a CMS admin to set the Site URL in the app settings.",
   cms_unauthorized: "The CMS turned down the app's API client. Ask a CMS admin to check it in the app settings.",
   cms_not_found: "The CMS couldn't find this item. Reload the page in the editor and try again.",
   cms_rate_limited: 'The CMS is busy. Try again in a moment.',
